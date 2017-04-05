@@ -4,7 +4,8 @@ use discord::Discord;
 use discord::model::Event;
 
 fn main() {
-    let discord=Discord::from_bot_token(env::args().nth(1)).expect("login failed");
+    let args: Vec<_> = env::args().collect();
+    let discord=Discord::from_bot_token(args[1].as_str()).expect("login failed");
 
     let (mut connection, _)=discord.connect().expect("connection failed");
     println!("Connected!");
@@ -13,9 +14,11 @@ fn main() {
         match connection.recv_event() {
             Ok(Event::MessageCreate(message)) => 
             {
-                println("{} says: {}", message.author.name, message.content);
+                println!("{} says: {}", message.author.name, message.content);
                 if(message.content == "!say")
-                    discord.send_message(message.channel_id, "Hello o/", "", false);
+                {
+                    discord.send_message(&message.channel_id, "Hello o/", "", false);
+                }
                 else if(message.content == "!quit")
                 {
                     println!("Quitting");
@@ -24,7 +27,7 @@ fn main() {
 
             }
             Ok(_) => {}
-            Err(discord::Error::closed(code, body)) =>
+            Err(discord::Error::Closed(code, body)) =>
             {
                 println!("Gateway sent error with code {:?}: {}", code, body);
                 break;
