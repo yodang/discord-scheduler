@@ -4,4 +4,9 @@ version = "0.1.0"
 authors = ["yodang <yoda@elmekia.fr>"]
 
 [dependencies]
-discord = "0.7.0"
+serenity = "0.5.13"
+#openssl = "0.10"
+
+#Necessary patch for serenity to build with openssl 1.1+
+[patch.crates-io]
+openssl = { git = "https://github.com/ishitatsuyuki/rust-openssl", branch = "0.9.x" }
