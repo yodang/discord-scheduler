@@ -5,6 +5,7 @@ authors = ["yodang <yoda@elmekia.fr>"]
 
 [dependencies]
 serenity = "0.5.13"
+lazy_static = "1.3.0"
 #openssl = "0.10"
 
 #Necessary patch for serenity to build with openssl 1.1+
