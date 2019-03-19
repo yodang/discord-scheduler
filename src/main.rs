@@ -17,6 +17,9 @@ use serenity::model::prelude::*;
 
 struct Handler;
 
+static CHECK_MARK: char='✅';
+
+
 fn chan_by_name(guild:&Guild, name:&str)->Result<GuildChannel, ()>
 {
     for (_,chan) in guild.channels().unwrap()
@@ -57,7 +60,7 @@ impl EventHandler for Handler
                 if let Some(event)=st.events.get_mut(&reaction.message_id)
                 {
                     println!("reaction: {:?}", reaction);
-                    if reaction.user_id != bot_id
+                    if reaction.user_id != bot_id && reaction.emoji==ReactionType::Unicode(CHECK_MARK.to_string())
                     {
                         event.subscribed.insert(reaction.user_id);
                     }
@@ -76,7 +79,10 @@ impl EventHandler for Handler
                 if let Some(event)=st.events.get_mut(&reaction.message_id)
                 {
                     println!("reaction: {:?}", reaction);
-                    event.subscribed.remove(&reaction.user_id);
+                    if reaction.emoji==ReactionType::Unicode(CHECK_MARK.to_string())
+                    {
+                        event.subscribed.remove(&reaction.user_id);
+                    }
                 }
             }
             _=>{}
@@ -200,7 +206,7 @@ command!(
             {
                 let message=st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
                 println!("New event: {}", event.details);
-                if let Err(err)=message.react("✅")
+                if let Err(err)=message.react(CHECK_MARK)
                 {
                     println!("Error reacting: {:?}", err);
                 }
