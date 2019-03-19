@@ -66,6 +66,22 @@ impl EventHandler for Handler
             _=>{}
         }
     }
+
+    fn reaction_remove(&self, _context: Context, reaction: Reaction)
+    {
+        match BOT.lock().unwrap()[0].state
+        {
+            Some(ref mut st)=>
+            {
+                if let Some(event)=st.events.get_mut(&reaction.message_id)
+                {
+                    println!("reaction: {:?}", reaction);
+                    event.subscribed.remove(&reaction.user_id);
+                }
+            }
+            _=>{}
+        }
+    }
 }
 
 struct Conf
