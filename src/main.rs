@@ -1,11 +1,10 @@
 #[macro_use] extern crate serenity;
 
-#[macro_use] extern crate lazy_static;
+extern crate typemap;
 
 use std::env;
 use std::collections::{HashSet, HashMap};
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use serenity::client::Client;
 use serenity::framework::StandardFramework;
@@ -14,6 +13,8 @@ use serenity::model::prelude::*;
 //use serenity::model::guild::{Role, Member, Guild};
 //use serenity::model::channel::{GuildChannel, Message, Reaction};
 //use serenity::model::id::MessageId;
+
+use typemap::Key;
 
 struct Handler;
 
@@ -37,13 +38,11 @@ impl EventHandler for Handler
     fn guild_create(&self, _context: Context, guild: Guild, _is_new: bool)
     {
         println!("Guild: {}\n members: {:?}\n roles: {:?}",guild.name, guild.members, guild.roles);
-        println!("Accessing properties");
-        let ref mut bot=BOT.lock().unwrap()[0];
+        let mut lock=_context.data.lock();
 
-        println!("{}", bot.config.billboard_name);
-        let board= chan_by_name(&guild, &bot.config.billboard_name).unwrap();
-        let role= guild.role_by_name(&bot.config.hl_role_name).unwrap();
-        bot.state=Some(State{
+        let board= chan_by_name(&guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
+        let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
+        lock.insert::<BotState>(State{
             events:HashMap::new(),
             billboard:board,
             hl_role:role.clone()
@@ -53,7 +52,7 @@ impl EventHandler for Handler
     fn reaction_add(&self, _context: Context, reaction: Reaction)
     {
         let bot_id=serenity::http::raw::get_current_user().unwrap().id;
-        match BOT.lock().unwrap()[0].state
+        match _context.data.lock().get_mut::<BotState>()
         {
             Some(ref mut st)=>
             {
@@ -72,7 +71,7 @@ impl EventHandler for Handler
 
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
     {
-        match BOT.lock().unwrap()[0].state
+        match _context.data.lock().get_mut::<BotState>()
         {
             Some(ref mut st)=>
             {
@@ -88,6 +87,13 @@ impl EventHandler for Handler
             _=>{}
         }
     }
+}
+
+struct BotConf;
+
+impl Key for BotConf
+{
+    type Value=Conf;
 }
 
 struct Conf
@@ -106,6 +112,13 @@ struct Event
     subscribed: HashSet<UserId>
 }
 
+struct BotState;
+
+impl Key for BotState
+{
+    type Value=State;
+}
+
 struct State
 {
     //Registered events
@@ -114,34 +127,6 @@ struct State
     billboard: GuildChannel,
     //Role included in mention for announcements
     hl_role: Role
-}
-
-struct Bot
-{
-    state: Option<State>,
-    config: Conf
-}
-
-impl Bot
-{
-    fn new() -> Self
-    {
-        Bot
-        {
-            state:None,
-            config: Conf
-            {
-                billboard_name: String::from_str("annonces").unwrap(),
-                hl_role_name: String::from_str("Blitz").unwrap()
-            }
-        }
-    }
-
-}
-
-lazy_static!
-{
-    static ref BOT: Mutex<Vec<Bot>> = Mutex::new(vec![]);
 }
 
 fn main() {
@@ -159,8 +144,11 @@ fn main() {
         .cmd("post", post)
     );
 
-    let mut bot=Bot::new();
-    BOT.lock().unwrap().push(bot);
+    discord.data.lock().insert::<BotConf>(Conf
+    {
+        billboard_name: String::from_str("annonces").unwrap(),
+        hl_role_name: String::from_str("Blitz").unwrap()
+    });
 
 
     if let Err(what)=discord.start()
@@ -200,7 +188,7 @@ command!(
             details:args.rest().to_owned(),
             subscribed:HashSet::new()
         };
-        match BOT.lock().unwrap()[0].state
+        match _context.data.lock().get_mut::<BotState>()
         {
             Some(ref mut st)=>
             {
@@ -221,11 +209,11 @@ command!(
 command!(
     print(_context, message)
     {
-        match BOT.lock().unwrap()[0].state
+        match _context.data.lock().get::<BotState>()
         {
             Some(ref st) =>
             {
-                message.reply(&format!("{:?}", st.events));
+                let _=message.reply(&format!("{:?}", st.events));
             }
             None => {}
         }
