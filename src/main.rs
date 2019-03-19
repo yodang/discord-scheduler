@@ -3,15 +3,17 @@
 #[macro_use] extern crate lazy_static;
 
 use std::env;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::str::FromStr;
 use std::sync::Mutex;
 
 use serenity::client::Client;
 use serenity::framework::StandardFramework;
 use serenity::prelude::*;
-use serenity::model::guild::{Role, Member, Guild};
-use serenity::model::channel::{GuildChannel, Message};
+use serenity::model::prelude::*;
+//use serenity::model::guild::{Role, Member, Guild};
+//use serenity::model::channel::{GuildChannel, Message, Reaction};
+//use serenity::model::id::MessageId;
 
 struct Handler;
 
@@ -39,10 +41,30 @@ impl EventHandler for Handler
         let board= chan_by_name(&guild, &bot.config.billboard_name).unwrap();
         let role= guild.role_by_name(&bot.config.hl_role_name).unwrap();
         bot.state=Some(State{
-            events:vec![],
+            events:HashMap::new(),
             billboard:board,
             hl_role:role.clone()
         });
+    }
+
+    fn reaction_add(&self, _context: Context, reaction: Reaction)
+    {
+        let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+        match BOT.lock().unwrap()[0].state
+        {
+            Some(ref mut st)=>
+            {
+                if let Some(event)=st.events.get_mut(&reaction.message_id)
+                {
+                    println!("reaction: {:?}", reaction);
+                    if reaction.user_id != bot_id
+                    {
+                        event.subscribed.insert(reaction.user_id);
+                    }
+                }
+            }
+            _=>{}
+        }
     }
 }
 
@@ -59,13 +81,13 @@ struct Event
     name: String,
     author: Member,
     details: String,
-    subscribed: HashSet<String>
+    subscribed: HashSet<UserId>
 }
 
 struct State
 {
     //Registered events
-    events: Vec<Event>,
+    events: HashMap<MessageId, Event>,
     //Channel where announcements are posted
     billboard: GuildChannel,
     //Role included in mention for announcements
@@ -153,16 +175,21 @@ command!(
         let event=Event {
             author:message.member().unwrap(),
             name:args.single_quoted::<String>().unwrap().to_owned(),
-            details:args.full().to_owned(),
+            details:args.rest().to_owned(),
             subscribed:HashSet::new()
         };
         match BOT.lock().unwrap()[0].state
         {
             Some(ref mut st)=>
             {
-                st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details));
+                let message=st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
                 println!("New event: {}", event.details);
-                st.events.push(event);
+                if let Err(err)=message.react("✅")
+                {
+                    println!("Error reacting: {:?}", err);
+                }
+
+                st.events.insert(message.id, event);
             }
             _=>{}
         }
