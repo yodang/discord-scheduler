@@ -140,6 +140,7 @@ struct Event
     //id: u64,
     name: String,
     author: Member,
+    guild: GuildId,
     details: String,
     subscribed: HashSet<UserId>
 }
@@ -170,7 +171,6 @@ fn main() {
             c.prefix("!")
             //.allowed_channels()
         )
-        .cmd("say", say)
         .cmd("quit", quit)
         .cmd("print", print)
         .cmd("post", post)
@@ -192,13 +192,6 @@ fn main() {
 }
 
 command!(
-    say(_context, message)
-    {
-        let _=message.channel_id.say("Hello o/");
-    }
-);
-
-command!(
     quit(context, _message)
     {
         context.quit();
@@ -212,12 +205,12 @@ command!(
  * subscribe to it
  */
 command!(
-    //Only available via DM
     post(_context, message, args)
     {
         let event=Event {
             author:message.member().unwrap(),
             name:args.single_quoted::<String>().unwrap().to_owned(),
+            guild: message.guild_id.unwrap(),
             details:args.rest().to_owned(),
             subscribed:HashSet::new()
         };
@@ -225,17 +218,18 @@ command!(
         {
             Some(ref mut st)=>
             {
-                let message=st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
+                let msg=st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
                 println!("New event: {}", event.details);
-                if let Err(err)=message.react(CHECK_MARK)
+                if let Err(err)=msg.react(CHECK_MARK)
                 {
                     println!("Error reacting: {:?}", err);
                 }
-                if let Err(err)=message.react(REMOVE_MARK)
+                if let Err(err)=msg.react(REMOVE_MARK)
                 {
                     println!("Error reacting: {:?}", err);
                 }
-                st.events.insert(message.id, event);
+                st.events.insert(msg.id, event);
+                let _=message.delete();
             }
             _=>{}
         }
@@ -245,6 +239,12 @@ command!(
 command!(
     print(_context, message)
     {
+        //Only available via DM
+        if !message.is_private()
+        {
+            return Ok(());
+        }
+
         match _context.data.lock().get::<BotState>()
         {
             Some(ref st) =>
@@ -271,6 +271,12 @@ where
 command!(
     my_events(context, message)
     {
+        //Only available via DM
+        if !message.is_private()
+        {
+            return Ok(());
+        }
+
         match context.data.lock().get::<BotState>()
         {
             Some(ref st) =>
@@ -279,7 +285,7 @@ command!(
                 {
                     if event.author.user_id() == message.author.id
                     {
-                        format!("{}\n{}: {}", acc, event.name, print_nicks(event.subscribed.iter().map(|a|{a}), &message.guild_id.unwrap()))
+                        format!("{}\n{}: {}", acc, event.name, print_nicks(event.subscribed.iter().map(|a|{a}), &event.guild))
                     }
                     else
                     {
