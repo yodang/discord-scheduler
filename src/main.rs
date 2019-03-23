@@ -18,7 +18,8 @@ use typemap::Key;
 
 struct Handler;
 
-static CHECK_MARK: char='✅';
+static CHECK_MARK: &str="✅";
+static REMOVE_MARK: &str="❌";
 
 
 fn chan_by_name(guild:&Guild, name:&str)->Result<GuildChannel, ()>
@@ -52,21 +53,52 @@ impl EventHandler for Handler
     fn reaction_add(&self, _context: Context, reaction: Reaction)
     {
         let bot_id=serenity::http::raw::get_current_user().unwrap().id;
-        match _context.data.lock().get_mut::<BotState>()
+        println!("reaction: {:?}", reaction);
+        match reaction.emoji
         {
-            Some(ref mut st)=>
+            ReactionType::Unicode(ref s) if s==CHECK_MARK =>
             {
-                if let Some(event)=st.events.get_mut(&reaction.message_id)
+                if reaction.user_id != bot_id
                 {
-                    println!("reaction: {:?}", reaction);
-                    if reaction.user_id != bot_id && reaction.emoji==ReactionType::Unicode(CHECK_MARK.to_string())
+                    match _context.data.lock().get_mut::<BotState>()
                     {
-                        event.subscribed.insert(reaction.user_id);
+                        Some(ref mut st)=>
+                        {
+                            if let Some(event)=st.events.get_mut(&reaction.message_id)
+                            {
+                                event.subscribed.insert(reaction.user_id);
+                            }
+                        }
+                        _=>{}
                     }
                 }
             }
-            _=>{}
+            ReactionType::Unicode(ref s) if s==REMOVE_MARK =>
+            {
+                match _context.data.lock().get_mut::<BotState>()
+                {
+                    Some(ref mut st)=>
+                    {
+                        let mut remove=false;
+                        if let Some(event)=st.events.get(&reaction.message_id)
+                        {
+                            if reaction.user_id == event.author.user_id()
+                            {
+                                let _=reaction.message().unwrap().delete();
+                                remove=true;
+                            }
+                        }
+                        if remove
+                        {
+                            st.events.remove(&reaction.message_id);
+                        }
+                    }
+                    _=>{}
+                }
+            }
+            _ => {}
         }
+        
     }
 
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
@@ -199,7 +231,10 @@ command!(
                 {
                     println!("Error reacting: {:?}", err);
                 }
-
+                if let Err(err)=message.react(REMOVE_MARK)
+                {
+                    println!("Error reacting: {:?}", err);
+                }
                 st.events.insert(message.id, event);
             }
             _=>{}
