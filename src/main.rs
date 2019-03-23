@@ -142,6 +142,7 @@ fn main() {
         .cmd("quit", quit)
         .cmd("print", print)
         .cmd("post", post)
+        .cmd("my_events", my_events)
     );
 
     discord.data.lock().insert::<BotConf>(Conf
@@ -214,6 +215,43 @@ command!(
             Some(ref st) =>
             {
                 let _=message.reply(&format!("{:?}", st.events));
+            }
+            None => {}
+        }
+    }
+);
+
+fn print_nicks<'a, I>(users: I, guild: &GuildId) -> String
+where
+    I:Iterator<Item = &'a UserId>
+{
+    users.fold("".to_owned(), |acc, u|
+    {
+        println!("User: {:?}", u);
+        format!("{}{}, ", acc, u.to_user().unwrap().
+        nick_in(guild).unwrap_or_else(||{u.to_user().unwrap().name}))
+    })
+}
+
+command!(
+    my_events(context, message)
+    {
+        match context.data.lock().get::<BotState>()
+        {
+            Some(ref st) =>
+            {
+                let content=st.events.iter().fold("".to_owned(), |acc, (_, event)|
+                {
+                    if event.author.user_id() == message.author.id
+                    {
+                        format!("{}\n{}: {}", acc, event.name, print_nicks(event.subscribed.iter().map(|a|{a}), &message.guild_id.unwrap()))
+                    }
+                    else
+                    {
+                        acc
+                    }
+                });
+                let _=message.reply(&content);
             }
             None => {}
         }
