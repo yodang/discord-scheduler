@@ -6,6 +6,9 @@ authors = ["yodang <yoda@elmekia.fr>"]
 [dependencies]
 serenity = "0.5.13"
 typemap = "0.3.3"
+serde = { version= "1.0", features= ["derive"] }
+serde_json = "1.0"
+#graceful = "0.1.1"
 #openssl = "0.10"
 
 #Necessary patch for serenity to build with openssl 1.1+

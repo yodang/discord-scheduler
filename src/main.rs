@@ -2,9 +2,13 @@
 
 extern crate typemap;
 
+extern crate serde;
+extern crate serde_json;
+
 use std::env;
 use std::collections::{HashSet, HashMap};
 use std::str::FromStr;
+use std::ops::Drop;
 
 use serenity::client::Client;
 use serenity::framework::StandardFramework;
@@ -16,7 +20,12 @@ use serenity::model::prelude::*;
 
 use typemap::Key;
 
+use serde::{Serialize, Deserialize};
+
 struct Handler;
+
+//Missing functionnality:
+//-Save/Restore state (list off monitored message ids and their author)
 
 static CHECK_MARK: &str="✅";
 static REMOVE_MARK: &str="❌";
@@ -134,7 +143,7 @@ struct Conf
     hl_role_name: String
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Event
 {
     //id: u64,
@@ -160,6 +169,15 @@ struct State
     billboard: GuildChannel,
     //Role included in mention for announcements
     hl_role: Role
+}
+
+impl Drop for State
+{
+    fn drop(&mut self)
+    {
+        println!("State is dropped, here it is:");
+        println!("{}", serde_json::to_string_pretty(&self.events).unwrap());
+    }
 }
 
 fn main() {
@@ -188,7 +206,8 @@ fn main() {
     {
         println!("An error occured: {:?}", what);
     }
-
+    println!("Exiting, here is the state:");
+    println!("{}", serde_json::to_string_pretty(&discord.data.lock().get::<BotState>().unwrap().events).unwrap());
 }
 
 command!(
