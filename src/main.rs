@@ -193,6 +193,7 @@ fn main() {
         .cmd("print", print)
         .cmd("post", post)
         .cmd("my_events", my_events)
+        .cmd("callvote", callvote)
     );
 
     discord.data.lock().insert::<BotConf>(Conf
@@ -314,6 +315,48 @@ command!(
                 let _=message.reply(&content);
             }
             None => {}
+        }
+    }
+);
+
+struct Vote{
+    desc: String,
+    results: Vec<(String, u32)>,
+    //guild: GuildId,
+    //author: Member
+}
+
+command!(
+    callvote(context, message, args)
+    {
+        //Only available via DM
+        if !message.is_private()
+        {
+            return Ok(());
+        }
+
+        let vote=Vote {
+            //author:message.member().unwrap(),
+            desc:args.single_quoted::<String>().unwrap().to_owned(),
+            //guild: message.guild_id.unwrap(),
+            results:args.multiple_quoted::<String>().unwrap().into_iter().map(|x| (x,0)).collect()
+        };
+        match context.data.lock().get_mut::<BotState>()
+        {
+            Some(ref mut st)=>
+            {
+                let msg=st.billboard.say(&format!("<@&{}> A vote started {}:\n{:?}", &st.hl_role.id, /*vote.author.display_name(),*/ vote.desc, vote.results)).unwrap();
+                println!("New event: {}", vote.desc);
+                for i in 0..9
+                {
+                    if let Err(err)=msg.react(format!("{}\u{20e3}", i))
+                    {
+                        println!("Error reacting: {:?}", err);
+                    }
+                }
+                //st.events.insert(msg.id, event);
+            }
+            _=>{}
         }
     }
 );
