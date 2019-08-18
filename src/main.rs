@@ -63,6 +63,7 @@ impl EventHandler for Handler
     fn reaction_add(&self, _context: Context, reaction: Reaction)
     {
         event_react_add(&_context, &reaction);
+        vote_react_add(&_context, &reaction);
     }
 
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
@@ -326,6 +327,7 @@ command!(
     }
 );
 
+//TODO: find a way to end/delete a vote
 struct Vote{
     desc: String,
     results: Vec<(String, u32)>,
@@ -345,6 +347,49 @@ impl Vote{
             pos+=1;
         }
         format!("A vote started {}:\n{}", self.desc, results_str)
+    }
+}
+
+fn vote_react_add(_context: &Context, reaction: &Reaction)
+{
+    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    if reaction.user_id == bot_id
+    {
+        return;
+    }
+    println!("vote reaction: {:?}", reaction);
+    match _context.data.lock().get_mut::<BotState>()
+    {
+        Some(ref mut st)=>
+        {
+            if let Some(vote)=st.votes.get_mut(&reaction.message_id)
+            {
+                match reaction.emoji
+                {
+                    ReactionType::Unicode(ref s) =>
+                    {
+                        if s.ends_with("\u{20e3}")
+                        {
+                            if let Some(n)=s.chars().next().unwrap().to_digit(10)
+                            {
+                                let i=n as usize;
+                                println!("Got reaction {}", i);
+                                if i>0 && i<=vote.results.len()
+                                {
+                                    let (s, count)=&vote.results[i-1];
+                                    println!("Increasing entry ({},{})", s, count);
+                                    vote.results[i-1]=(s.to_string(), count+1);
+                                    let content=format!("<@&{}> {}", &st.hl_role.id, vote.text());
+                                    st.billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
     }
 }
 
