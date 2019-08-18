@@ -52,16 +52,12 @@ impl EventHandler for Handler
 
         let board= chan_by_name(&guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
         let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
-        let mut guild_map=HashMap::new();
-        guild_map.insert(guild.id, GuildState {
+        //What happens when a guild is already inside ?
+        lock.get_mut::<BotState>().unwrap().guilds.insert(guild.id, GuildState {
             billboard: board,
             hl_role: role.clone()
-        }).unwrap();
-        lock.insert::<BotState>(State{
-            events:HashMap::new(),
-            votes:HashMap::new(),
-            guilds:guild_map
         });
+
     }
 
     fn reaction_add(&self, _context: Context, reaction: Reaction)
@@ -155,6 +151,11 @@ fn main() {
     {
         billboard_name: String::from_str("annonces").unwrap(),
         hl_role_name: String::from_str("Blitz").unwrap()
+    });
+    discord.data.lock().insert::<BotState>(State{
+        events:HashMap::new(),
+        votes:HashMap::new(),
+        guilds:HashMap::new()
     });
 
 
