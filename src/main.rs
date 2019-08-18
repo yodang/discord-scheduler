@@ -68,21 +68,7 @@ impl EventHandler for Handler
 
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
     {
-        match _context.data.lock().get_mut::<BotState>()
-        {
-            Some(ref mut st)=>
-            {
-                if let Some(event)=st.events.get_mut(&reaction.message_id)
-                {
-                    println!("reaction: {:?}", reaction);
-                    if reaction.emoji==ReactionType::Unicode(CHECK_MARK.to_string())
-                    {
-                        event.subscribed.remove(&reaction.user_id);
-                    }
-                }
-            }
-            _=>{}
-        }
+        event_react_remove(&_context, &reaction);
     }
 }
 
@@ -261,6 +247,25 @@ fn event_react_add(_context: &Context, reaction: &Reaction)
             }
         }
         _ => {}
+    }
+}
+
+fn event_react_remove(_context: &Context, reaction: &Reaction)
+{
+    match _context.data.lock().get_mut::<BotState>()
+    {
+        Some(ref mut st)=>
+        {
+            if let Some(event)=st.events.get_mut(&reaction.message_id)
+            {
+                println!("reaction: {:?}", reaction);
+                if reaction.emoji==ReactionType::Unicode(CHECK_MARK.to_string())
+                {
+                    event.subscribed.remove(&reaction.user_id);
+                }
+            }
+        }
+        _=>{}
     }
 }
 
