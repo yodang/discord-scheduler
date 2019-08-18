@@ -61,53 +61,7 @@ impl EventHandler for Handler
 
     fn reaction_add(&self, _context: Context, reaction: Reaction)
     {
-        let bot_id=serenity::http::raw::get_current_user().unwrap().id;
-        println!("reaction: {:?}", reaction);
-        match reaction.emoji
-        {
-            ReactionType::Unicode(ref s) if s==CHECK_MARK =>
-            {
-                if reaction.user_id != bot_id
-                {
-                    match _context.data.lock().get_mut::<BotState>()
-                    {
-                        Some(ref mut st)=>
-                        {
-                            if let Some(event)=st.events.get_mut(&reaction.message_id)
-                            {
-                                event.subscribed.insert(reaction.user_id);
-                            }
-                        }
-                        _=>{}
-                    }
-                }
-            }
-            ReactionType::Unicode(ref s) if s==REMOVE_MARK =>
-            {
-                match _context.data.lock().get_mut::<BotState>()
-                {
-                    Some(ref mut st)=>
-                    {
-                        let mut remove=false;
-                        if let Some(event)=st.events.get(&reaction.message_id)
-                        {
-                            if reaction.user_id == event.author.user_id()
-                            {
-                                let _=reaction.message().unwrap().delete();
-                                remove=true;
-                            }
-                        }
-                        if remove
-                        {
-                            st.events.remove(&reaction.message_id);
-                        }
-                    }
-                    _=>{}
-                }
-            }
-            _ => {}
-        }
-        
+        event_react_add(&_context, &reaction);
     }
 
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
@@ -255,6 +209,56 @@ command!(
         }
     }
 );
+
+fn event_react_add(_context: &Context, reaction: &Reaction)
+{
+    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    println!("reaction: {:?}", reaction);
+    match reaction.emoji
+    {
+        ReactionType::Unicode(ref s) if s==CHECK_MARK =>
+        {
+            if reaction.user_id != bot_id
+            {
+                match _context.data.lock().get_mut::<BotState>()
+                {
+                    Some(ref mut st)=>
+                    {
+                        if let Some(event)=st.events.get_mut(&reaction.message_id)
+                        {
+                            event.subscribed.insert(reaction.user_id);
+                        }
+                    }
+                    _=>{}
+                }
+            }
+        }
+        ReactionType::Unicode(ref s) if s==REMOVE_MARK =>
+        {
+            match _context.data.lock().get_mut::<BotState>()
+            {
+                Some(ref mut st)=>
+                {
+                    let mut remove=false;
+                    if let Some(event)=st.events.get(&reaction.message_id)
+                    {
+                        if reaction.user_id == event.author.user_id()
+                        {
+                            let _=reaction.message().unwrap().delete();
+                            remove=true;
+                        }
+                    }
+                    if remove
+                    {
+                        st.events.remove(&reaction.message_id);
+                    }
+                }
+                _=>{}
+            }
+        }
+        _ => {}
+    }
+}
 
 command!(
     print(_context, message)
