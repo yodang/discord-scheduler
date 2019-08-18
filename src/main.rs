@@ -52,11 +52,15 @@ impl EventHandler for Handler
 
         let board= chan_by_name(&guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
         let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
+        let mut guild_map=HashMap::new();
+        guild_map.insert(guild.id, GuildState {
+            billboard: board,
+            hl_role: role.clone()
+        }).unwrap();
         lock.insert::<BotState>(State{
             events:HashMap::new(),
             votes:HashMap::new(),
-            billboard:board,
-            hl_role:role.clone()
+            guilds:guild_map
         });
     }
 
@@ -104,16 +108,22 @@ impl Key for BotState
     type Value=State;
 }
 
+struct GuildState
+{
+    //Channel where announcements are posted
+    billboard: GuildChannel,
+    //Role included in mention for announcements
+    hl_role: Role
+}
+
 struct State
 {
     //Registered events
     events: HashMap<MessageId, Event>,
     //Current votes
     votes: HashMap<MessageId, Vote>,
-    //Channel where announcements are posted
-    billboard: GuildChannel,
-    //Role included in mention for announcements
-    hl_role: Role
+    //Guilds joined
+    guilds: HashMap<GuildId, GuildState>
 }
 
 impl Drop for State
@@ -183,7 +193,7 @@ command!(
         {
             Some(ref mut st)=>
             {
-                let msg=st.billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
+                let msg=st.guilds.get(&event.guild).unwrap().billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.guilds.get(&event.guild).unwrap().hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
                 println!("New event: {}", event.details);
                 if let Err(err)=msg.react(CHECK_MARK)
                 {
@@ -337,8 +347,8 @@ command!(
 struct Vote{
     desc: String,
     results: Vec<(String, u32)>,
-    msg: MessageId
-    //guild: GuildId,
+    msg: MessageId,
+    guild: GuildId
     //author: Member
 }
 
@@ -385,8 +395,8 @@ fn vote_react_add(_context: &Context, reaction: &Reaction)
                                     let (s, count)=&vote.results[i-1];
                                     println!("Increasing entry ({},{})", s, count);
                                     vote.results[i-1]=(s.to_string(), count+1);
-                                    let content=format!("<@&{}> {}", &st.hl_role.id, vote.text());
-                                    st.billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                    let content=format!("<@&{}> {}", &st.guilds.get(&vote.guild).unwrap().hl_role.id, vote.text());
+                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
                                 }
                             }
                         }
@@ -432,8 +442,8 @@ fn vote_react_remove(_context: &Context, reaction: &Reaction)
                                     let (s, count)=&vote.results[i-1];
                                     println!("Increasing entry ({},{})", s, count);
                                     vote.results[i-1]=(s.to_string(), count-1);
-                                    let content=format!("<@&{}> {}", &st.hl_role.id, vote.text());
-                                    st.billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                    let content=format!("<@&{}> {}", &st.guilds.get(&vote.guild).unwrap().hl_role.id, vote.text());
+                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
                                 }
                             }
                         }
@@ -449,8 +459,8 @@ fn vote_react_remove(_context: &Context, reaction: &Reaction)
 command!(
     callvote(context, message, args)
     {
-        //Only available via DM
-        if !message.is_private()
+        //Not available via DM
+        if message.is_private()
         {
             return Ok(());
         }
@@ -459,16 +469,17 @@ command!(
         {
             Some(ref mut st)=>
             {
-                let msg=st.billboard.say(&format!("<@&{}>", &st.hl_role.id)).unwrap();
+                let guild=message.guild_id.unwrap();
+                let msg=st.guilds.get(&guild).unwrap().billboard.say(&format!("<@&{}>", &st.guilds.get(&guild).unwrap().hl_role.id)).unwrap();
                 let vote=Vote {
                     //author:message.member().unwrap(),
                     desc:args.single_quoted::<String>().unwrap().to_owned(),
-                    //guild: message.guild_id.unwrap(),
+                    guild: guild,
                     results:args.multiple_quoted::<String>().unwrap().into_iter().map(|x| (x,0)).collect(),
                     msg:msg.id
                 };
                 println!("New event: {}", vote.desc);
-                st.billboard.edit_message(vote.msg, |m| m.content(&format!("<@&{}> {}", &st.hl_role.id, vote.text()))).unwrap();
+                st.guilds.get(&guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&format!("<@&{}> {}", &st.guilds.get(&guild).unwrap().hl_role.id, vote.text()))).unwrap();
                 for i in 1..(vote.results.len()+1) //Ranges upper bound are excluded
                 {
                     if let Err(err)=msg.react(format!("{}\u{20e3}", i))
