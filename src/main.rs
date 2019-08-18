@@ -54,6 +54,7 @@ impl EventHandler for Handler
         let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
         lock.insert::<BotState>(State{
             events:HashMap::new(),
+            votes:HashMap::new(),
             billboard:board,
             hl_role:role.clone()
         });
@@ -119,6 +120,8 @@ struct State
 {
     //Registered events
     events: HashMap<MessageId, Event>,
+    //Current votes
+    votes: HashMap<MessageId, Vote>,
     //Channel where announcements are posted
     billboard: GuildChannel,
     //Role included in mention for announcements
@@ -326,8 +329,23 @@ command!(
 struct Vote{
     desc: String,
     results: Vec<(String, u32)>,
+    msg: MessageId
     //guild: GuildId,
     //author: Member
+}
+
+impl Vote{
+    fn text(self: &Vote) -> String
+    {
+        let mut results_str="".to_owned();
+        let mut pos=1;
+        for (choice, count) in self.results.iter()
+        {
+            results_str.push_str(&format!("{}-{}: {}\n", pos, choice, count));
+            pos+=1;
+        }
+        format!("A vote started {}:\n{}", self.desc, results_str)
+    }
 }
 
 command!(
@@ -339,26 +357,28 @@ command!(
             return Ok(());
         }
 
-        let vote=Vote {
-            //author:message.member().unwrap(),
-            desc:args.single_quoted::<String>().unwrap().to_owned(),
-            //guild: message.guild_id.unwrap(),
-            results:args.multiple_quoted::<String>().unwrap().into_iter().map(|x| (x,0)).collect()
-        };
         match context.data.lock().get_mut::<BotState>()
         {
             Some(ref mut st)=>
             {
-                let msg=st.billboard.say(&format!("<@&{}> A vote started {}:\n{:?}", &st.hl_role.id, /*vote.author.display_name(),*/ vote.desc, vote.results)).unwrap();
+                let msg=st.billboard.say(&format!("<@&{}>", &st.hl_role.id)).unwrap();
+                let vote=Vote {
+                    //author:message.member().unwrap(),
+                    desc:args.single_quoted::<String>().unwrap().to_owned(),
+                    //guild: message.guild_id.unwrap(),
+                    results:args.multiple_quoted::<String>().unwrap().into_iter().map(|x| (x,0)).collect(),
+                    msg:msg.id
+                };
                 println!("New event: {}", vote.desc);
-                for i in 0..9
+                st.billboard.edit_message(vote.msg, |m| m.content(&format!("<@&{}> {}", &st.hl_role.id, vote.text()))).unwrap();
+                for i in 1..(vote.results.len()+1) //Ranges upper bound are excluded
                 {
                     if let Err(err)=msg.react(format!("{}\u{20e3}", i))
                     {
                         println!("Error reacting: {:?}", err);
                     }
                 }
-                //st.events.insert(msg.id, event);
+                st.votes.insert(msg.id, vote);
             }
             _=>{}
         }
