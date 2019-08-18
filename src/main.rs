@@ -69,6 +69,7 @@ impl EventHandler for Handler
     fn reaction_remove(&self, _context: Context, reaction: Reaction)
     {
         event_react_remove(&_context, &reaction);
+        vote_react_remove(&_context, &reaction);
     }
 }
 
@@ -384,6 +385,53 @@ fn vote_react_add(_context: &Context, reaction: &Reaction)
                                     let (s, count)=&vote.results[i-1];
                                     println!("Increasing entry ({},{})", s, count);
                                     vote.results[i-1]=(s.to_string(), count+1);
+                                    let content=format!("<@&{}> {}", &st.hl_role.id, vote.text());
+                                    st.billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+//FIXME This function shares too much with the add one. They shoud be refactored.
+//either find a way to extract the common part which makes sense (ie not just specifying the
+//operation as a new parameter) or make them both use an update fonction which counts all the
+//results instead of updating only the changed one.
+fn vote_react_remove(_context: &Context, reaction: &Reaction)
+{
+    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    if reaction.user_id == bot_id
+    {
+        return;
+    }
+    println!("vote reaction: {:?}", reaction);
+    match _context.data.lock().get_mut::<BotState>()
+    {
+        Some(ref mut st)=>
+        {
+            if let Some(vote)=st.votes.get_mut(&reaction.message_id)
+            {
+                match reaction.emoji
+                {
+                    ReactionType::Unicode(ref s) =>
+                    {
+                        if s.ends_with("\u{20e3}")
+                        {
+                            if let Some(n)=s.chars().next().unwrap().to_digit(10)
+                            {
+                                let i=n as usize;
+                                println!("Got reaction {}", i);
+                                if i>0 && i<=vote.results.len()
+                                {
+                                    let (s, count)=&vote.results[i-1];
+                                    println!("Increasing entry ({},{})", s, count);
+                                    vote.results[i-1]=(s.to_string(), count-1);
                                     let content=format!("<@&{}> {}", &st.hl_role.id, vote.text());
                                     st.billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
                                 }
