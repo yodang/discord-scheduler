@@ -52,7 +52,7 @@ impl EventHandler for Handler
 
         let board= chan_by_name(&guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
         let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
-        //What happens when a guild is already inside ?
+        //FIXME: may overwrite guilds retrieved from previous state 
         lock.get_mut::<BotState>().unwrap().guilds.insert(guild.id, GuildState {
             billboard: board,
             hl_role: role.clone()
