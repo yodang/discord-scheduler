@@ -104,6 +104,7 @@ impl Key for BotState
     type Value=State;
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 struct GuildState
 {
     //Channel where announcements are posted
@@ -112,6 +113,7 @@ struct GuildState
     hl_role: Role
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 struct State
 {
     //Registered events
@@ -140,6 +142,7 @@ fn main() {
             c.prefix("!")
             //.allowed_channels()
         )
+        .cmd("dump", dump)
         .cmd("quit", quit)
         .cmd("print", print)
         .cmd("post", post)
@@ -166,6 +169,20 @@ fn main() {
     println!("Exiting, here is the state:");
     println!("{}", serde_json::to_string_pretty(&discord.data.lock().get::<BotState>().unwrap().events).unwrap());
 }
+
+command!(
+    dump(context, _message)
+    {
+        match context.data.lock().get::<BotState>()
+        {
+            Some(st) =>
+            {
+                println!("{}", serde_json::to_string_pretty(st).unwrap());
+            }
+            _ => {}
+        }
+    }
+);
 
 command!(
     quit(context, _message)
@@ -345,6 +362,7 @@ command!(
 );
 
 //TODO: find a way to end/delete a vote
+#[derive(Debug, Serialize, Deserialize)]
 struct Vote{
     desc: String,
     results: Vec<(String, u32)>,
