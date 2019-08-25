@@ -136,9 +136,9 @@ impl Drop for State
 }
 
 #[cfg(unix)]
-fn dump_state(c: &Client)
+fn dump_state(r: &Arc<Mutex<ShareMap>>)
 {
-    match c.data.lock().get::<BotState>()
+    match r.lock().get::<BotState>()
     {
         Some(st) =>
         {
@@ -155,7 +155,8 @@ fn main() {
     #[cfg(unix)]
     {
         unsafe{
-        let _=signal_hook::register(signal_hook::SIGINT, || dump_state(&discord));
+        let data=discord.data.clone();
+        let _=signal_hook::register(signal_hook::SIGINT, move || dump_state(&data));
         let _=signal_hook::register(signal_hook::SIGTERM, ||{println!("Terminated!"); std::process::exit(0);});
         //Forbidden
         //let _=signal_hook::register(signal_hook::SIGKILL, ||println!("Killed!"));
