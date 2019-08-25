@@ -11,6 +11,7 @@ use std::env;
 use std::collections::{HashSet, HashMap};
 use std::str::FromStr;
 use std::ops::Drop;
+use std::io::Write;
 
 use serenity::client::Client;
 use serenity::framework::StandardFramework;
@@ -136,7 +137,7 @@ impl Drop for State
 }
 
 #[cfg(unix)]
-fn dump_state(r: &Arc<Mutex<ShareMap>>)
+fn dump_state(r: &std::sync::Arc<Mutex<ShareMap>>)
 {
     match r.lock().get::<BotState>()
     {
