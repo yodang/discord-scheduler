@@ -143,7 +143,7 @@ fn dump_state(r: &std::sync::Arc<Mutex<ShareMap>>)
     {
         Some(st) =>
         {
-            let state_file=std::fs::File::create("bot_state.json").unwrap();
+            let mut state_file=std::fs::File::create("bot_state.json").unwrap();
             write!(state_file, "{}", serde_json::to_string_pretty(st).unwrap());
         }
         _ => {}
