@@ -140,9 +140,12 @@ fn main() {
     let mut discord=Client::new(args[1].as_str(), Handler).expect("login failed");
     #[cfg(unix)]
     {
-        let signal=signal_hook::register(signal_hook::SIGINT, println!("Interrupted!"));
-        let signal=signal_hook::register(signal_hook::SIGTERM, println!("Terminated!"));
-        let signal=signal_hook::register(signal_hook::SIGKILL, println!("Killed!"));
+        unsafe{
+        let _=signal_hook::register(signal_hook::SIGINT, ||{println!("Interrupted!"); std::process::exit(0);});
+        let _=signal_hook::register(signal_hook::SIGTERM, ||{println!("Terminated!"); std::process::exit(0);});
+        //Forbidden
+        //let _=signal_hook::register(signal_hook::SIGKILL, ||println!("Killed!"));
+        }
     }
 
     discord.with_framework(StandardFramework::new()
