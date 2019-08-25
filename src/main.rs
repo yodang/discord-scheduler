@@ -142,7 +142,8 @@ fn dump_state(r: &Arc<Mutex<ShareMap>>)
     {
         Some(st) =>
         {
-            println!("{}", serde_json::to_string_pretty(st).unwrap())
+            let state_file=std::fs::File::create("bot_state.json").unwrap();
+            state_file.write(format!("{}", serde_json::to_string_pretty(st).unwrap()));
         }
         _ => {}
     }
