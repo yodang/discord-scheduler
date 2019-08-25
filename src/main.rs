@@ -4,6 +4,8 @@ extern crate typemap;
 
 extern crate serde;
 extern crate serde_json;
+#[cfg(unix)]
+extern crate signal_hook;
 
 use std::env;
 use std::collections::{HashSet, HashMap};
@@ -136,6 +138,12 @@ impl Drop for State
 fn main() {
     let args: Vec<_> = env::args().collect();
     let mut discord=Client::new(args[1].as_str(), Handler).expect("login failed");
+    #[cfg(unix)]
+    {
+        let signal=signal_hook::register(signal_hook::SIGINT, println!("Interrupted!"));
+        let signal=signal_hook::register(signal_hook::SIGTERM, println!("Terminated!"));
+        let signal=signal_hook::register(signal_hook::SIGKILL, println!("Killed!"));
+    }
 
     discord.with_framework(StandardFramework::new()
         .configure(|c|
