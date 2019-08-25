@@ -135,13 +135,27 @@ impl Drop for State
     }
 }
 
+#[cfg(unix)]
+fn dump_state(c: &Client)
+{
+    match c.data.lock().get::<BotState>()
+    {
+        Some(st) =>
+        {
+            println!("{}", serde_json::to_string_pretty(st).unwrap())
+        }
+        _ => {}
+    }
+    std::process::exit(0);
+}
+
 fn main() {
     let args: Vec<_> = env::args().collect();
     let mut discord=Client::new(args[1].as_str(), Handler).expect("login failed");
     #[cfg(unix)]
     {
         unsafe{
-        let _=signal_hook::register(signal_hook::SIGINT, ||{println!("Interrupted!"); std::process::exit(0);});
+        let _=signal_hook::register(signal_hook::SIGINT, || dump_state(&discord));
         let _=signal_hook::register(signal_hook::SIGTERM, ||{println!("Terminated!"); std::process::exit(0);});
         //Forbidden
         //let _=signal_hook::register(signal_hook::SIGKILL, ||println!("Killed!"));
