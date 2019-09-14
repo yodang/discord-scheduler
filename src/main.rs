@@ -13,8 +13,15 @@ use std::str::FromStr;
 use std::ops::Drop;
 use std::io::Write;
 
-use serenity::client::Client;
-use serenity::framework::StandardFramework;
+use serenity::{
+    client::Client,
+    framework::standard::{
+        Args,
+        CommandResult,
+        StandardFramework,
+        macros::{command, group}
+    }
+};
 use serenity::prelude::*;
 use serenity::model::prelude::*;
 //use serenity::model::guild::{Role, Member, Guild};
@@ -34,9 +41,9 @@ static CHECK_MARK: &str="✅";
 static REMOVE_MARK: &str="❌";
 
 
-fn chan_by_name(guild:&Guild, name:&str)->Result<GuildChannel, ()>
+fn chan_by_name(ctx: &Context, guild:&Guild, name:&str)->Result<GuildChannel, ()>
 {
-    for (_,chan) in guild.channels().unwrap()
+    for (_,chan) in guild.channels(ctx).unwrap()
     {
         if chan.name == name
         {
@@ -51,9 +58,9 @@ impl EventHandler for Handler
     fn guild_create(&self, _context: Context, guild: Guild, _is_new: bool)
     {
         println!("Guild: {}\n members: {:?}\n roles: {:?}",guild.name, guild.members, guild.roles);
-        let mut lock=_context.data.lock();
+        let mut lock=_context.data.write();
 
-        let board= chan_by_name(&guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
+        let board= chan_by_name(&_context, &guild, &lock.get::<BotConf>().unwrap().billboard_name).unwrap();
         let role= guild.role_by_name(&lock.get::<BotConf>().unwrap().hl_role_name).unwrap();
         //FIXME: may overwrite guilds retrieved from previous state 
         lock.get_mut::<BotState>().unwrap().guilds.insert(guild.id, GuildState {
@@ -137,9 +144,9 @@ impl Drop for State
 }
 
 #[cfg(unix)]
-fn dump_state(r: &std::sync::Arc<Mutex<ShareMap>>)
+fn dump_state(r: &std::sync::Arc<RwLock<ShareMap>>)
 {
-    match r.lock().get::<BotState>()
+    match r.read().get::<BotState>()
     {
         Some(st) =>
         {
@@ -170,20 +177,17 @@ fn main() {
             c.prefix("!")
             //.allowed_channels()
         )
-        .cmd("dump", dump)
-        .cmd("quit", quit)
-        .cmd("print", print)
-        .cmd("post", post)
-        .cmd("my_events", my_events)
-        .cmd("callvote", callvote)
+        .group(&GENERAL_GROUP)
+        .group(&EVENTS_GROUP)
+        .group(&VOTE_GROUP)
     );
 
-    discord.data.lock().insert::<BotConf>(Conf
+    discord.data.write().insert::<BotConf>(Conf
     {
         billboard_name: String::from_str("annonces").unwrap(),
         hl_role_name: String::from_str("Blitz").unwrap()
     });
-    discord.data.lock().insert::<BotState>(State{
+    discord.data.write().insert::<BotState>(State{
         events:HashMap::new(),
         votes:HashMap::new(),
         guilds:HashMap::new()
@@ -195,28 +199,30 @@ fn main() {
         println!("An error occured: {:?}", what);
     }
     println!("Exiting, here is the state:");
-    println!("{}", serde_json::to_string_pretty(&discord.data.lock().get::<BotState>().unwrap().events).unwrap());
+    println!("{}", serde_json::to_string_pretty(&discord.data.read().get::<BotState>().unwrap().events).unwrap());
 }
 
-command!(
-    dump(context, _message)
+#[command]
+fn dump(context: &mut Context, _message: &Message) -> CommandResult
+{
+    match context.data.read().get::<BotState>()
     {
-        match context.data.lock().get::<BotState>()
+        Some(st) =>
         {
-            Some(st) =>
-            {
-                println!("{}", serde_json::to_string_pretty(st).unwrap());
-            }
-            _ => {}
+            println!("{}", serde_json::to_string_pretty(st).unwrap());
         }
+        _ => {}
     }
-);
 
-command!(
-    quit(context, _message)
-    {
-        context.quit();
-    }
+    Ok(())
+}
+
+group!(
+{
+    name: "general",
+    options: {},
+    commands: [dump]
+}
 );
 
 /*
@@ -225,41 +231,43 @@ command!(
  * The event is then saved and posted by the bot in the configured channel where guild members can
  * subscribe to it
  */
-command!(
-    post(_context, message, args)
+#[command]
+fn post(_context: &mut Context, message: &Message, _args: Args) -> CommandResult
+{
+    let mut args=_args.clone();
+    let event=Event {
+        author:message.member(&_context).unwrap(),
+        name:args.single_quoted::<String>().unwrap().to_owned(),
+        guild: message.guild_id.unwrap(),
+        details:args.rest().to_owned(),
+        subscribed:HashSet::new()
+    };
+    match _context.data.write().get_mut::<BotState>()
     {
-        let event=Event {
-            author:message.member().unwrap(),
-            name:args.single_quoted::<String>().unwrap().to_owned(),
-            guild: message.guild_id.unwrap(),
-            details:args.rest().to_owned(),
-            subscribed:HashSet::new()
-        };
-        match _context.data.lock().get_mut::<BotState>()
+        Some(ref mut st)=>
         {
-            Some(ref mut st)=>
+            let msg=st.guilds.get(&event.guild).unwrap().billboard.say(&_context, &format!("<@&{}> {} posted the event {}:\n{}", &st.guilds.get(&event.guild).unwrap().hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
+            println!("New event: {}", event.details);
+            if let Err(err)=msg.react(&_context, CHECK_MARK)
             {
-                let msg=st.guilds.get(&event.guild).unwrap().billboard.say(&format!("<@&{}> {} posted the event {}:\n{}", &st.guilds.get(&event.guild).unwrap().hl_role.id, event.author.display_name(), event.name, event.details)).unwrap();
-                println!("New event: {}", event.details);
-                if let Err(err)=msg.react(CHECK_MARK)
-                {
-                    println!("Error reacting: {:?}", err);
-                }
-                if let Err(err)=msg.react(REMOVE_MARK)
-                {
-                    println!("Error reacting: {:?}", err);
-                }
-                st.events.insert(msg.id, event);
-                let _=message.delete();
+                println!("Error reacting: {:?}", err);
             }
-            _=>{}
+            if let Err(err)=msg.react(&_context, REMOVE_MARK)
+            {
+                println!("Error reacting: {:?}", err);
+            }
+            st.events.insert(msg.id, event);
+            let _=message.delete(&_context);
         }
+        _=>{}
     }
-);
+
+    Ok(())
+}
 
 fn event_react_add(_context: &Context, reaction: &Reaction)
 {
-    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    let bot_id=_context.http.get_current_user().unwrap().id;
     println!("reaction: {:?}", reaction);
     match reaction.emoji
     {
@@ -267,7 +275,7 @@ fn event_react_add(_context: &Context, reaction: &Reaction)
         {
             if reaction.user_id != bot_id
             {
-                match _context.data.lock().get_mut::<BotState>()
+                match _context.data.write().get_mut::<BotState>()
                 {
                     Some(ref mut st)=>
                     {
@@ -282,7 +290,7 @@ fn event_react_add(_context: &Context, reaction: &Reaction)
         }
         ReactionType::Unicode(ref s) if s==REMOVE_MARK =>
         {
-            match _context.data.lock().get_mut::<BotState>()
+            match _context.data.write().get_mut::<BotState>()
             {
                 Some(ref mut st)=>
                 {
@@ -291,7 +299,7 @@ fn event_react_add(_context: &Context, reaction: &Reaction)
                     {
                         if reaction.user_id == event.author.user_id()
                         {
-                            let _=reaction.message().unwrap().delete();
+                            let _=reaction.message(&_context).unwrap().delete(_context);
                             remove=true;
                         }
                     }
@@ -309,7 +317,7 @@ fn event_react_add(_context: &Context, reaction: &Reaction)
 
 fn event_react_remove(_context: &Context, reaction: &Reaction)
 {
-    match _context.data.lock().get_mut::<BotState>()
+    match _context.data.write().get_mut::<BotState>()
     {
         Some(ref mut st)=>
         {
@@ -326,67 +334,77 @@ fn event_react_remove(_context: &Context, reaction: &Reaction)
     }
 }
 
-command!(
-    print(_context, message)
+#[command]
+fn print(_context: &mut Context, message: &Message) -> CommandResult
+{
+    //Only available via DM
+    if !message.is_private()
     {
-        //Only available via DM
-        if !message.is_private()
-        {
-            return Ok(());
-        }
-
-        match _context.data.lock().get::<BotState>()
-        {
-            Some(ref st) =>
-            {
-                let _=message.reply(&format!("{:?}", st.events));
-            }
-            None => {}
-        }
+        return Ok(());
     }
-);
 
-fn print_nicks<'a, I>(users: I, guild: &GuildId) -> String
+    match _context.data.read().get::<BotState>()
+    {
+        Some(ref st) =>
+        {
+            let _=message.reply(&_context, &format!("{:?}", st.events));
+        }
+        None => {}
+    }
+
+    Ok(())
+}
+
+fn print_nicks<'a, I>(ctx: &Context, users: I, guild: &GuildId) -> String
 where
     I:Iterator<Item = &'a UserId>
 {
     users.fold("".to_owned(), |acc, u|
     {
         println!("User: {:?}", u);
-        format!("{}{}, ", acc, u.to_user().unwrap().
-        nick_in(guild).unwrap_or_else(||{u.to_user().unwrap().name}))
+        format!("{}{}, ", acc, u.to_user(ctx).unwrap().
+        nick_in(ctx, guild).unwrap_or_else(||{u.to_user(ctx).unwrap().name}))
     })
 }
 
-command!(
-    my_events(context, message)
+#[command]
+fn my_events(context: &mut Context, message: &Message) -> CommandResult
+{
+    //Only available via DM
+    if !message.is_private()
     {
-        //Only available via DM
-        if !message.is_private()
-        {
-            return Ok(());
-        }
-
-        match context.data.lock().get::<BotState>()
-        {
-            Some(ref st) =>
-            {
-                let content=st.events.iter().fold("".to_owned(), |acc, (_, event)|
-                {
-                    if event.author.user_id() == message.author.id
-                    {
-                        format!("{}\n{}: {}", acc, event.name, print_nicks(event.subscribed.iter().map(|a|{a}), &event.guild))
-                    }
-                    else
-                    {
-                        acc
-                    }
-                });
-                let _=message.reply(&content);
-            }
-            None => {}
-        }
+        return Ok(());
     }
+
+    match context.data.read().get::<BotState>()
+    {
+        Some(ref st) =>
+        {
+            let content=st.events.iter().fold("".to_owned(), |acc, (_, event)|
+            {
+                if event.author.user_id() == message.author.id
+                {
+                    format!("{}\n{}: {}", acc, event.name, print_nicks(&context, event.subscribed.iter().map(|a|{a}), &event.guild))
+                }
+                else
+                {
+                    acc
+                }
+            });
+            let _=message.reply(&context, &content);
+        }
+        None => {}
+    }
+
+    Ok(())
+}
+
+group!(
+{
+    name: "events",
+    options: {},
+    commands: [post, my_events, print]
+}
 );
 
 //TODO: find a way to end/delete a vote
@@ -415,13 +433,13 @@ impl Vote{
 
 fn vote_react_add(_context: &Context, reaction: &Reaction)
 {
-    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    let bot_id=_context.http.get_current_user().unwrap().id;
     if reaction.user_id == bot_id
     {
         return;
     }
     println!("vote reaction: {:?}", reaction);
-    match _context.data.lock().get_mut::<BotState>()
+    match _context.data.write().get_mut::<BotState>()
     {
         Some(ref mut st)=>
         {
@@ -443,7 +461,7 @@ fn vote_react_add(_context: &Context, reaction: &Reaction)
                                     println!("Increasing entry ({},{})", s, count);
                                     vote.results[i-1]=(s.to_string(), count+1);
                                     let content=format!("<@&{}> {}", &st.guilds.get(&vote.guild).unwrap().hl_role.id, vote.text());
-                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(&_context, vote.msg, |m| m.content(&content)).unwrap();
                                 }
                             }
                         }
@@ -462,13 +480,13 @@ fn vote_react_add(_context: &Context, reaction: &Reaction)
 //results instead of updating only the changed one.
 fn vote_react_remove(_context: &Context, reaction: &Reaction)
 {
-    let bot_id=serenity::http::raw::get_current_user().unwrap().id;
+    let bot_id=_context.http.get_current_user().unwrap().id;
     if reaction.user_id == bot_id
     {
         return;
     }
     println!("vote reaction: {:?}", reaction);
-    match _context.data.lock().get_mut::<BotState>()
+    match _context.data.write().get_mut::<BotState>()
     {
         Some(ref mut st)=>
         {
@@ -490,7 +508,7 @@ fn vote_react_remove(_context: &Context, reaction: &Reaction)
                                     println!("Increasing entry ({},{})", s, count);
                                     vote.results[i-1]=(s.to_string(), count-1);
                                     let content=format!("<@&{}> {}", &st.guilds.get(&vote.guild).unwrap().hl_role.id, vote.text());
-                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&content)).unwrap();
+                                    st.guilds.get(&vote.guild).unwrap().billboard.edit_message(&_context, vote.msg, |m| m.content(&content)).unwrap();
                                 }
                             }
                         }
@@ -503,40 +521,49 @@ fn vote_react_remove(_context: &Context, reaction: &Reaction)
     }
 }
 
-command!(
-    callvote(context, message, args)
+#[command]
+fn callvote(context: &mut Context, message: &Message, _args: Args) -> CommandResult
+{
+    let mut args=_args.clone();
+    //Not available via DM
+    if message.is_private()
     {
-        //Not available via DM
-        if message.is_private()
-        {
-            return Ok(());
-        }
-
-        match context.data.lock().get_mut::<BotState>()
-        {
-            Some(ref mut st)=>
-            {
-                let guild=message.guild_id.unwrap();
-                let msg=st.guilds.get(&guild).unwrap().billboard.say(&format!("<@&{}>", &st.guilds.get(&guild).unwrap().hl_role.id)).unwrap();
-                let vote=Vote {
-                    //author:message.member().unwrap(),
-                    desc:args.single_quoted::<String>().unwrap().to_owned(),
-                    guild: guild,
-                    results:args.multiple_quoted::<String>().unwrap().into_iter().map(|x| (x,0)).collect(),
-                    msg:msg.id
-                };
-                println!("New event: {}", vote.desc);
-                st.guilds.get(&guild).unwrap().billboard.edit_message(vote.msg, |m| m.content(&format!("<@&{}> {}", &st.guilds.get(&guild).unwrap().hl_role.id, vote.text()))).unwrap();
-                for i in 1..(vote.results.len()+1) //Ranges upper bound are excluded
-                {
-                    if let Err(err)=msg.react(format!("{}\u{20e3}", i))
-                    {
-                        println!("Error reacting: {:?}", err);
-                    }
-                }
-                st.votes.insert(msg.id, vote);
-            }
-            _=>{}
-        }
+        return Ok(());
     }
+
+    match context.data.write().get_mut::<BotState>()
+    {
+        Some(ref mut st)=>
+        {
+            let guild=message.guild_id.unwrap();
+            let msg=st.guilds.get(&guild).unwrap().billboard.say(&context, &format!("<@&{}>", &st.guilds.get(&guild).unwrap().hl_role.id)).unwrap();
+            let vote=Vote {
+                //author:message.member().unwrap(),
+                desc:args.single_quoted::<String>().unwrap().to_owned(),
+                guild: guild,
+                results:args.raw_quoted().map(|x| (x.to_owned(),0)).collect(),
+                msg:msg.id
+            };
+            println!("New event: {}", vote.desc);
+            st.guilds.get(&guild).unwrap().billboard.edit_message(&context, vote.msg, |m| m.content(&format!("<@&{}> {}", &st.guilds.get(&guild).unwrap().hl_role.id, vote.text()))).unwrap();
+            for i in 1..(vote.results.len()+1) //Ranges upper bound are excluded
+            {
+                if let Err(err)=msg.react(&context, format!("{}\u{20e3}", i))
+                {
+                    println!("Error reacting: {:?}", err);
+                }
+            }
+            st.votes.insert(msg.id, vote);
+        }
+        _=>{}
+    }
+    Ok(())
+}
+
+group!(
+{
+    name: "vote",
+    options: {},
+    commands: [callvote]
+}
 );
